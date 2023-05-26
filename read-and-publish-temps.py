@@ -1,8 +1,8 @@
 import asyncio
-from bleak import BleakClient, BleakGATTCharacteristic
+from bleak import BleakClient, BleakGATTCharacteristic, BleakScanner
 import paho.mqtt.client as mqtt
 
-bt_address = "378CDE75-BF3C-8A04-3E9E-ABAB331448EF"
+bt_name = "Grill BT5.0"
 UUID_NOTIFY_CHARACTERISTIC = "0000FFB2-0000-1000-8000-00805f9b34fb"
 
 mqtt_client = mqtt.Client()
@@ -13,6 +13,13 @@ mqtt_pass = "mqtt"
 
 def byteArrToShort(bArr, i) :
     return ((bArr[i + 1]) | (bArr[i] << 8))
+
+async def bt_discover():
+    while 1:
+        for d in await BleakScanner.discover():
+            if d.name == bt_name:
+                print(f"Discovered {bt_name} at {d.address}")
+                return d.address
 
 def bt_callback(sender: BleakGATTCharacteristic, bytes: bytes):
     if len(bytes) > 0 and bytes[0] == 85 and bytes[1] == 0:
@@ -32,6 +39,8 @@ async def bt_connect():
     def on_bt_disconnect(bleakClient: BleakClient):
         print(f"Disconnected from bluetooth device {bt_address}. Reconnecting")
         disconnected_event.set()
+
+    bt_address = await bt_discover()
 
     async with BleakClient(bt_address, on_bt_disconnect) as client:
         print(f"Connected to bluetooth device {bt_address}. Subscribing to gatt characteristic {UUID_NOTIFY_CHARACTERISTIC}")
