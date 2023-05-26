@@ -35,6 +35,7 @@ def bt_callback(sender: BleakGATTCharacteristic, bytes: bytes):
             else:
                 mqtt_client.publish(f"smoker/probe-available/{i+1}", "no", retain=False)
                 mqtt_client.publish(f"smoker/probe/{i+1}", "0", retain=False)
+                print(f"Probe {i+1}: 0")
 
 async def bt_connect():
 
