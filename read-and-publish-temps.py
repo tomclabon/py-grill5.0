@@ -56,11 +56,20 @@ def mqtt_on_disconnect(client, userdata, flags, rc):
     print("Disconnected to MQTT broker, reconnecting")
     mqtt_client.connect(mqtt_host, 1883, 60)
 
-async def main():
+def mqtt_connect():
     mqtt_client.on_connect = mqtt_on_connect
     mqtt_client.on_disconnect = mqtt_on_disconnect
     mqtt_client.username_pw_set(mqtt_user, mqtt_pass)
-    mqtt_client.connect(mqtt_host, mqtt_port, 60)
+    while 1:
+        try:
+            mqtt_client.connect(mqtt_host, mqtt_port, 60)
+            return
+        except Exception as e:
+            print("Failed to connect to mqtt broker: ")
+            print(e)
+
+async def main():
+    mqtt_connect()
     while 1:
         await bt_connect()
 
