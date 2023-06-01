@@ -4,6 +4,7 @@ import paho.mqtt.client as mqtt
 
 bt_name = "Grill BT5.0"
 UUID_NOTIFY_CHARACTERISTIC = "0000FFB2-0000-1000-8000-00805f9b34fb"
+bt_connected = False
 
 mqtt_client = mqtt.Client()
 mqtt_host = "192.168.50.11"
@@ -50,12 +51,22 @@ async def bt_connect():
     async with BleakClient(bt_address, on_bt_disconnect) as client:
         print(f"Connected to bluetooth device {bt_address}. Subscribing to gatt characteristic {UUID_NOTIFY_CHARACTERISTIC}")
         await client.start_notify(UUID_NOTIFY_CHARACTERISTIC, bt_callback)
+        bt_connected = True;
+        if(mqtt_client.is_connected()):
+            mqtt_client.publish("smoker/bt-connected", "true", 0, True)
         # Wait forever
         await disconnected_event.wait()
+        bt_connected = False;
+        if(mqtt_client.is_connected()):
+            mqtt_client.publish("smoker/bt-connected", "false", 0, True)
 
 # The callback for when the client receives a CONNACK response from the server.
 def mqtt_on_connect(client, userdata, flags, rc):
     print("Connected to MQTT broker with result code "+str(rc))
+    payload = "true"
+    if(not bt_connected):
+        payload = "false"
+    mqtt_client.publish("smoker/bt-connected", payload, 0, True)
 
 def mqtt_on_disconnect(client, userdata, flags, rc):
     print("Disconnected to MQTT broker, reconnecting")
@@ -73,9 +84,21 @@ def mqtt_connect():
             print("Failed to connect to mqtt broker: ")
             print(e)
 
+async def heartbeat_mqtt():
+    while 1:
+        try:
+            if(mqtt_client.is_connected()):
+                mqtt_client.publish("smoker/heartbeat", "", 0, False)
+            else:
+                print("Could not send heartbeat, not connected to mqttFailed to connect to mqtt broker")
+        except Exception as e:
+            print("Failed to send mqtt heartbeat: ")
+            print(e)
+
 async def main():
     mqtt_connect()
     while 1:
         await bt_connect()
 
 asyncio.run(main())
+asyncio.run(heartbeat_mqtt())
