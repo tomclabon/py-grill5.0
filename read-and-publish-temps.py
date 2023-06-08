@@ -4,9 +4,7 @@ import paho.mqtt.client as mqtt
 
 bt_name = "Grill BT5.0"
 UUID_NOTIFY_CHARACTERISTIC = "0000FFB2-0000-1000-8000-00805f9b34fb"
-bt_connected = False
 
-mqtt_client = mqtt.Client()
 mqtt_host = "192.168.50.11"
 mqtt_port = 1883
 mqtt_user = "mqtt"
@@ -22,23 +20,7 @@ async def bt_discover():
                 print(f"Discovered {bt_name} at {d.address}")
                 return d.address
 
-def bt_callback(sender: BleakGATTCharacteristic, bytes: bytes):
-    if len(bytes) > 0 and bytes[0] == 85 and bytes[1] == 0:
-        for i in range(6):
-            tempCShort = byteArrToShort(bytes, (i * 2) + 2)
-            if tempCShort != 65535:
-                tempCFloat = tempCShort / 10.0
-                tempF = ((tempCFloat * 9) / 5) + 32
-                tempFString = f"{tempF:.1f}"
-                mqtt_client.publish(f"smoker/probe-connected/{i+1}", "yes", retain=False)
-                mqtt_client.publish(f"smoker/probe-temp/{i+1}", tempFString, retain=False)
-                print(f"Probe {i+1}: {tempFString}")
-            else:
-                mqtt_client.publish(f"smoker/probe-connected/{i+1}", "no", retain=False)
-                mqtt_client.publish(f"smoker/probe-temp/{i+1}", "0", retain=False)
-                print(f"Probe {i+1}: 0")
-
-async def bt_connect():
+async def bt_connect(mqtt_client, state):
 
     disconnected_event = asyncio.Event()
 
@@ -46,33 +28,53 @@ async def bt_connect():
         print(f"Disconnected from bluetooth device {bt_address}. Reconnecting")
         disconnected_event.set()
 
+    def bt_callback(sender: BleakGATTCharacteristic, bytes: bytes):
+        if len(bytes) > 0 and bytes[0] == 85 and bytes[1] == 0:
+            for i in range(6):
+                tempCShort = byteArrToShort(bytes, (i * 2) + 2)
+                if tempCShort != 65535:
+                    tempCFloat = tempCShort / 10.0
+                    tempF = ((tempCFloat * 9) / 5) + 32
+                    tempFString = f"{tempF:.1f}"
+                    mqtt_client.publish(f"smoker/probe/{i+1}/connected", True, retain=False)
+                    mqtt_client.publish(f"smoker/probe/{i+1}/temperature", tempFString, retain=False)
+                    print(f"Probe {i+1}: {tempFString}")
+                else:
+                    mqtt_client.publish(f"smoker/probe/{i+1}/connected", False, retain=False)
+                    mqtt_client.publish(f"smoker/probe/{i+1}/temperature", "0", retain=False)
+                    print(f"Probe {i+1}: 0")
+
+    def publish_bt_connected():
+        try:
+            print(f"Publish BT connected {state.bt_connected}")
+            mqtt_client.publish("smoker/bt-connected", state.bt_connected, 0, True)
+        except Exception as e:
+            print("Failed to send bt_connected: ")
+            print(e)
+
     bt_address = await bt_discover()
 
     async with BleakClient(bt_address, on_bt_disconnect) as client:
         print(f"Connected to bluetooth device {bt_address}. Subscribing to gatt characteristic {UUID_NOTIFY_CHARACTERISTIC}")
         await client.start_notify(UUID_NOTIFY_CHARACTERISTIC, bt_callback)
-        bt_connected = True;
-        if(mqtt_client.is_connected()):
-            mqtt_client.publish("smoker/bt-connected", "true", 0, True)
+        state.bt_connected = True
+        publish_bt_connected()
         # Wait forever
         await disconnected_event.wait()
-        bt_connected = False;
-        if(mqtt_client.is_connected()):
-            mqtt_client.publish("smoker/bt-connected", "false", 0, True)
+        state.bt_connected = False
+        publish_bt_connected()
 
-# The callback for when the client receives a CONNACK response from the server.
-def mqtt_on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT broker with result code "+str(rc))
-    payload = "true"
-    if(not bt_connected):
-        payload = "false"
-    mqtt_client.publish("smoker/bt-connected", payload, 0, True)
+async def mqtt_connect(mqtt_client, state):
 
-def mqtt_on_disconnect(client, userdata, flags, rc):
-    print("Disconnected to MQTT broker, reconnecting")
-    mqtt_client.connect(mqtt_host, 1883, 60)
+    # The callback for when the client receives a CONNACK response from the server.
+    def mqtt_on_connect(client, userdata, flags, rc):
+        print("Connected to MQTT broker with result code "+str(rc))
+        client.publish("smoker/bt-connected", state.bt_connected, 0, True)
 
-def mqtt_connect():
+    def mqtt_on_disconnect(client, userdata, flags):
+        print("Disconnected to MQTT broker, reconnecting")
+        asyncio.create_task(mqtt_connect(client, state))
+
     mqtt_client.on_connect = mqtt_on_connect
     mqtt_client.on_disconnect = mqtt_on_disconnect
     mqtt_client.username_pw_set(mqtt_user, mqtt_pass)
@@ -84,21 +86,22 @@ def mqtt_connect():
             print("Failed to connect to mqtt broker: ")
             print(e)
 
-async def heartbeat_mqtt():
+async def heartbeat_mqtt(mqtt_client):
     while 1:
         try:
-            if(mqtt_client.is_connected()):
-                mqtt_client.publish("smoker/heartbeat", "", 0, False)
-            else:
-                print("Could not send heartbeat, not connected to mqttFailed to connect to mqtt broker")
+            mqtt_client.publish("smoker/heartbeat", "", 0, False)
         except Exception as e:
             print("Failed to send mqtt heartbeat: ")
             print(e)
+        await asyncio.sleep(10)
 
 async def main():
-    mqtt_connect()
+    mqtt_client = mqtt.Client()
+    state = type('', (), {})()
+    state.bt_connected = False
+    asyncio.create_task(mqtt_connect(mqtt_client, state))
+    asyncio.create_task(heartbeat_mqtt(mqtt_client))
     while 1:
-        await bt_connect()
+        await bt_connect(mqtt_client, state)
 
 asyncio.run(main())
-asyncio.run(heartbeat_mqtt())
