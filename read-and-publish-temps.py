@@ -47,7 +47,7 @@ async def bt_connect(mqtt_client, state):
     def publish_bt_connected():
         try:
             print(f"Publish BT connected {state.bt_connected}")
-            mqtt_client.publish("smoker/bt-connected", state.bt_connected, 0, True)
+            mqtt_client.publish("smoker/bt-connected", state.bt_connected, retain=False)
         except Exception as e:
             print("Failed to send bt_connected: ")
             print(e)
@@ -69,7 +69,7 @@ async def mqtt_connect(mqtt_client, state):
     # The callback for when the client receives a CONNACK response from the server.
     def mqtt_on_connect(client, userdata, flags, rc):
         print("Connected to MQTT broker with result code "+str(rc))
-        client.publish("smoker/bt-connected", state.bt_connected, 0, True)
+        client.publish("smoker/bt-connected", state.bt_connected, 0, retain=False)
 
     def mqtt_on_disconnect(client, userdata, flags):
         print("Disconnected to MQTT broker, reconnecting")
