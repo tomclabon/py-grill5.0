@@ -30,7 +30,7 @@ async def bt_connect(mqtt_client, state):
 
     def bt_callback(sender: BleakGATTCharacteristic, bytes: bytes):
         if len(bytes) > 0 and bytes[0] == 85 and bytes[1] == 0:
-            publish_bt_connected()
+            publish_bluetooth_connected()
             for i in range(6):
                 tempCShort = byteArrToShort(bytes, (i * 2) + 2)
                 if tempCShort != 65535:
@@ -45,12 +45,12 @@ async def bt_connect(mqtt_client, state):
                     mqtt_client.publish(f"smoker/probe/{i+1}/temperature", "0", retain=False)
                     print(f"Probe {i+1}: 0")
 
-    def publish_bt_connected():
+    def publish_bluetooth_connected():
         try:
-            print(f"Publish BT connected {state.bt_connected}")
-            mqtt_client.publish("smoker/bluetooth_connected", state.bt_connected, 0, True)
+            print(f"Publish BT connected {state.bluetooth_connected}")
+            mqtt_client.publish("smoker/bluetooth_connected", state.bluetooth_connected, 0, True)
         except Exception as e:
-            print("Failed to send bt_connected: ")
+            print("Failed to send bluetooth_connected: ")
             print(e)
 
     bt_address = await bt_discover()
@@ -58,19 +58,19 @@ async def bt_connect(mqtt_client, state):
     async with BleakClient(bt_address, on_bt_disconnect) as client:
         print(f"Connected to bluetooth device {bt_address}. Subscribing to gatt characteristic {UUID_NOTIFY_CHARACTERISTIC}")
         await client.start_notify(UUID_NOTIFY_CHARACTERISTIC, bt_callback)
-        state.bt_connected = True
-        publish_bt_connected()
+        state.bluetooth_connected = True
+        publish_bluetooth_connected()
         # Wait forever
         await disconnected_event.wait()
-        state.bt_connected = False
-        publish_bt_connected()
+        state.bluetooth_connected = False
+        publish_bluetooth_connected()
 
 async def mqtt_connect(mqtt_client, state):
 
     # The callback for when the client receives a CONNACK response from the server.
     def mqtt_on_connect(client, userdata, flags, rc):
         print("Connected to MQTT broker with result code "+str(rc))
-        client.publish("smoker/bluetooth_connected", state.bt_connected, 0, True)
+        client.publish("smoker/bluetooth_connected", state.bluetooth_connected, 0, True)
 
     def mqtt_on_disconnect(client, userdata, flags):
         print("Disconnected to MQTT broker, reconnecting")
@@ -99,7 +99,7 @@ async def heartbeat_mqtt(mqtt_client):
 async def main():
     mqtt_client = mqtt.Client()
     state = type('', (), {})()
-    state.bt_connected = False
+    state.bluetooth_connected = False
     asyncio.create_task(mqtt_connect(mqtt_client, state))
     asyncio.create_task(heartbeat_mqtt(mqtt_client))
     while 1:
